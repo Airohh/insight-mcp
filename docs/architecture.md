@@ -23,8 +23,7 @@ MCP client (Claude Code / Desktop / API Anthropic)   ← le client GÉNÈRE
    réponse citée. Conséquences : zéro clé API, zéro coût d'inférence, démo
    reproductible par quiconque clone le repo.
 2. **Serveur autonome** : index embarqué plutôt qu'un backend de recherche externe.
-   Aucune dépendance privée : le déploiement cloud (phase 3) est trivial, et la démo
-   tourne chez quiconque clone le repo.
+   Aucune dépendance privée — le déploiement cloud (phase 3) se réduit à un conteneur.
 3. **Corpus jamais commité.** `data/` gitignoré ; le repo ne contient que le code et
    une liste d'URLs publiques. Ingestion polie : robots.txt, User-Agent identifiable,
    ~1 req/s, cache disque.

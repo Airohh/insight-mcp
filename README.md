@@ -20,13 +20,15 @@ no API key on the server side.
 
 ```
 MCP client (Claude Code / Desktop / API)      ← the client GENERATES (cited answers)
-        │ stdio / Streamable HTTP (:8020)
+        │ stdio / Streamable HTTP (:8020, phase 3)
         ▼
     insight-mcp (FastMCP)
         │ local index: BM25 (+ dense, phase 2), SQLite
         ▼
     data/ (gitignored) ← scripts/ingest.py ← public URLs (configurable corpus)
 ```
+
+*Target architecture — `scripts/ingest.py` and the index land in phase 1 (see roadmap).*
 
 The corpus is configurable (URL list / sitemap). Indexed content is **never
 committed** — the repo ships code and seed URLs only.
