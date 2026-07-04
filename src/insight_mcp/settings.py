@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     corpus_seed_file: Path = _REPO_ROOT / "scripts" / "seed_urls_wavestone.txt"
     data_dir: Path = _REPO_ROOT / "data"
     search_mode: Literal["bm25", "hybrid"] = "bm25"
+    embed_model: str = "BAAI/bge-small-en-v1.5"  # hybrid mode only (fastembed)
     mcp_auth_token: str = ""  # HTTP transport only (phase 3)
     mcp_port: int = 8020  # HTTP transport only (phase 3)
 

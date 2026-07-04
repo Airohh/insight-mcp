@@ -57,7 +57,14 @@ def _get_index() -> SearchIndex:
     corpus = _get_corpus()
     with _init_lock:
         if _index is None:
-            _index = SearchIndex(corpus)
+            settings = get_settings()
+            embedder = None
+            if settings.search_mode == "hybrid":
+                from insight_mcp.search import fastembed_embedder
+
+                embedder = fastembed_embedder(settings.embed_model)
+            _index = SearchIndex(corpus, mode=settings.search_mode, embedder=embedder)
+            log.info("index_ready", extra={"mode": _index.mode})
         return _index
 
 
@@ -153,6 +160,46 @@ def list_topics() -> dict:
             for d in corpus.documents()
         ],
     }
+
+
+@mcp.resource("corpus://stats")
+def corpus_stats() -> str:
+    """Corpus statistics: document/chunk counts, date range, active search mode."""
+    corpus = _get_corpus()
+    dates = [d.date for d in corpus.documents() if d.date]
+    return json.dumps(
+        {
+            **corpus.stats(),
+            "oldest_date": min(dates, default=None),
+            "latest_date": max(dates, default=None),
+            "search_mode": get_settings().search_mode,
+        }
+    )
+
+
+@mcp.resource("corpus://health")
+def corpus_health() -> str:
+    """Liveness of the corpus database and the in-memory search index."""
+    try:
+        stats = _get_corpus().stats()
+        _get_index()
+    except Exception as exc:  # surface the failure instead of crashing the read
+        return json.dumps({"status": "error", "detail": str(exc)})
+    status = "ok" if stats["chunks"] > 0 else "empty"
+    return json.dumps({"status": status, **stats})
+
+
+@mcp.prompt()
+def grounded_answer(question: str) -> str:
+    """Answer a question strictly from the indexed publications, with citations."""
+    return (
+        "Answer the question below using ONLY passages returned by the"
+        " search_publications tool (call it first; refine the query and call it"
+        " again if the first results are weak). Every claim in your answer must"
+        " cite its source publication as: title (url). If the returned passages"
+        " do not cover the question, say so explicitly instead of guessing."
+        f"\n\nQuestion: {question}"
+    )
 
 
 def main() -> None:

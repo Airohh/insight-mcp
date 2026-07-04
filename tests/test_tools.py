@@ -1,6 +1,8 @@
 """Tools tested through their underlying functions, with the module-level
 corpus/index swapped for the synthetic fixture (no network, no real data/)."""
 
+import json
+
 import pytest
 
 import insight_mcp.server as server
@@ -53,6 +55,39 @@ def test_list_topics_overview(wired_server):
     assert overview["chunks"] > 0
     titles = {p["title"] for p in overview["publications"]}
     assert "AI agents in the enterprise" in titles
+
+
+def test_corpus_stats_resource(wired_server):
+    stats = json.loads(wired_server.corpus_stats())
+    assert stats["documents"] == 3
+    assert stats["latest_date"] == "2026-03-02"
+    assert stats["oldest_date"] == "2025-11-20"
+    assert stats["search_mode"] in ("bm25", "hybrid")
+
+
+def test_corpus_health_resource_ok(wired_server):
+    health = json.loads(wired_server.corpus_health())
+    assert health["status"] == "ok"
+    assert health["chunks"] > 0
+
+
+def test_corpus_health_resource_reports_error(monkeypatch, tmp_path):
+    monkeypatch.setattr(server, "_corpus", None)
+    monkeypatch.setattr(server, "_index", None)
+    monkeypatch.setattr(
+        server, "get_settings", lambda: type(
+            "S", (), {"db_path": tmp_path / "nope.db"}
+        )()
+    )
+    health = json.loads(server.corpus_health())
+    assert health["status"] == "error"
+    assert "ingest" in health["detail"]
+
+
+def test_grounded_answer_prompt_mentions_tool_and_question(wired_server):
+    text = wired_server.grounded_answer("What about AI agents?")
+    assert "search_publications" in text
+    assert "What about AI agents?" in text
 
 
 def test_missing_db_message(monkeypatch, tmp_path):
