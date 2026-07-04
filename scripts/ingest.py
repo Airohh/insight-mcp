@@ -37,12 +37,20 @@ def main() -> int:
             fetcher.close()
     else:
         seed_path = args.seed_file or settings.corpus_seed_file
-        with open(seed_path, encoding="utf-8") as f:
-            urls = [
-                line.strip()
-                for line in f
-                if line.strip() and not line.startswith("#")
-            ]
+        try:
+            with open(seed_path, encoding="utf-8") as f:
+                urls = [
+                    line.strip()
+                    for line in f
+                    if line.strip() and not line.startswith("#")
+                ]
+        except FileNotFoundError:
+            print(
+                f"Seed file not found: {seed_path}\n"
+                "Pass --seed-file or --sitemap, or set CORPUS_SEED_FILE.",
+                file=sys.stderr,
+            )
+            return 1
 
     urls = urls[: args.max_docs]
     if not urls:
@@ -55,8 +63,9 @@ def main() -> int:
         stats = corpus.stats()
     finally:
         corpus.close()
+    # ASCII only: stderr may be a cp1252 pipe on Windows
     print(
-        f"Ingested {count}/{len(urls)} URLs — corpus now has"
+        f"Ingested {count}/{len(urls)} URLs - corpus now has"
         f" {stats['documents']} documents / {stats['chunks']} chunks.",
         file=sys.stderr,
     )

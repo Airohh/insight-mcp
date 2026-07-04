@@ -54,7 +54,10 @@ class IndexedChunk:
 class Corpus:
     def __init__(self, db_path: Path):
         db_path.parent.mkdir(parents=True, exist_ok=True)
-        self._conn = sqlite3.connect(db_path)
+        # check_same_thread=False: the MCP server runs sync tools in a worker
+        # thread pool, so the connection is used from different threads. Access
+        # is serialized by the caller (see server._init_lock).
+        self._conn = sqlite3.connect(db_path, check_same_thread=False)
         self._conn.row_factory = sqlite3.Row
         self._conn.executescript(_SCHEMA)
 

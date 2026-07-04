@@ -39,6 +39,14 @@ def test_get_publication_unknown_id(wired_server):
         wired_server.get_publication(999)
 
 
+def test_get_publication_truncates_long_text(wired_server, corpus, monkeypatch):
+    monkeypatch.setattr(server, "MAX_DOC_CHARS", 50)
+    doc_id = corpus.documents()[0].id
+    doc = wired_server.get_publication(doc_id)
+    assert len(doc["text"]) == 50
+    assert doc["text_truncated"] is True
+
+
 def test_list_topics_overview(wired_server):
     overview = wired_server.list_topics()
     assert overview["documents"] == 3

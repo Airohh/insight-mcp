@@ -91,12 +91,23 @@ class Fetcher:
     def _allowed(self, url: str) -> bool:
         host = urlparse(url).scheme + "://" + urlparse(url).netloc
         if host not in self._robots:
-            rp = robotparser.RobotFileParser(host + "/robots.txt")
+            # Fetch robots.txt with our own client so the site sees the same
+            # User-Agent as the crawl itself (urllib's default UA gets blocked
+            # by some WAFs, which would silently disallow everything).
+            rp = robotparser.RobotFileParser()
             try:
-                rp.read()
-            except OSError:
-                # Unreachable robots.txt: default to allowed (standard practice)
+                resp = self._throttled_get(host + "/robots.txt")
+            except httpx.HTTPError:
+                resp = None
+            if resp is not None and resp.status_code == 200:
+                rp.parse(resp.text.splitlines())
+            else:
+                # No retrievable rules: default to allowed (crawling convention)
                 rp.allow_all = True
+                log.warning(
+                    "robots.txt not retrievable, assuming allowed",
+                    extra={"host": host},
+                )
             self._robots[host] = rp
         return self._robots[host].can_fetch(USER_AGENT, url)
 
@@ -125,8 +136,18 @@ class Fetcher:
         return resp.text
 
 
-def urls_from_sitemap(fetcher: Fetcher, sitemap_url: str, url_filter: str = "") -> list[str]:
+def urls_from_sitemap(
+    fetcher: Fetcher,
+    sitemap_url: str,
+    url_filter: str = "",
+    _seen: set[str] | None = None,
+) -> list[str]:
     """Collect <loc> URLs from a sitemap (recursing into sub-sitemaps)."""
+    seen = _seen if _seen is not None else set()
+    if sitemap_url in seen:
+        log.warning("sitemap cycle detected, skipping", extra={"url": sitemap_url})
+        return []
+    seen.add(sitemap_url)
     body = fetcher.fetch(sitemap_url)
     if body is None:
         return []
@@ -139,7 +160,7 @@ def urls_from_sitemap(fetcher: Fetcher, sitemap_url: str, url_filter: str = "") 
     if root.tag.endswith("sitemapindex"):
         urls: list[str] = []
         for loc in root.findall(".//sm:sitemap/sm:loc", ns):
-            urls += urls_from_sitemap(fetcher, (loc.text or "").strip(), url_filter)
+            urls += urls_from_sitemap(fetcher, (loc.text or "").strip(), url_filter, seen)
         return urls
     locs = [(loc.text or "").strip() for loc in root.findall(".//sm:url/sm:loc", ns)]
     return [u for u in locs if url_filter in u]

@@ -11,8 +11,10 @@ from __future__ import annotations
 import functools
 import json
 import logging
+import threading
 import time
 from collections.abc import Callable
+from dataclasses import asdict
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -27,29 +29,36 @@ log = logging.getLogger(__name__)
 mcp = FastMCP("insight-mcp")
 
 MAX_TOP_K = 20
+MAX_DOC_CHARS = 20_000
 
 _corpus: Corpus | None = None
 _index: SearchIndex | None = None
+# Tools run in a worker thread pool: guard lazy init (and serialize the
+# shared SQLite connection, opened with check_same_thread=False).
+_init_lock = threading.Lock()
 
 
 def _get_corpus() -> Corpus:
     global _corpus
-    if _corpus is None:
-        settings = get_settings()
-        if not settings.db_path.exists():
-            raise RuntimeError(
-                f"Corpus database not found at {settings.db_path}."
-                " Run 'python scripts/ingest.py' to build it first."
-            )
-        _corpus = Corpus(settings.db_path)
-    return _corpus
+    with _init_lock:
+        if _corpus is None:
+            settings = get_settings()
+            if not settings.db_path.exists():
+                raise RuntimeError(
+                    f"Corpus database not found at {settings.db_path}."
+                    " Run 'python scripts/ingest.py' to build it first."
+                )
+            _corpus = Corpus(settings.db_path)
+        return _corpus
 
 
 def _get_index() -> SearchIndex:
     global _index
-    if _index is None:
-        _index = SearchIndex(_get_corpus())
-    return _index
+    corpus = _get_corpus()
+    with _init_lock:
+        if _index is None:
+            _index = SearchIndex(corpus)
+        return _index
 
 
 def _logged(func: Callable[..., Any]) -> Callable[..., Any]:
@@ -101,18 +110,7 @@ def search_publications(query: str, top_k: int = 5) -> list[dict]:
     a passage in an answer.
     """
     top_k = max(1, min(int(top_k), MAX_TOP_K))
-    results = _get_index().search(query, top_k=top_k)
-    return [
-        {
-            "text": r.text,
-            "score": r.score,
-            "doc_id": r.doc_id,
-            "title": r.title,
-            "url": r.url,
-            "date": r.date,
-        }
-        for r in results
-    ]
+    return [asdict(r) for r in _get_index().search(query, top_k=top_k)]
 
 
 @mcp.tool()
@@ -130,6 +128,10 @@ def get_publication(doc_id: int) -> dict:
             f"No publication with doc_id={doc_id}. Use list_topics or"
             " search_publications to find valid ids."
         )
+    # Cap the payload so one long document cannot flood the client's context
+    if len(doc["text"]) > MAX_DOC_CHARS:
+        doc["text"] = doc["text"][:MAX_DOC_CHARS]
+        doc["text_truncated"] = True
     return doc
 
 
