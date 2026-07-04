@@ -1,47 +1,102 @@
-# Architecture — insight-mcp
-
-## Vue d'ensemble
+# Architecture & decisions
 
 ```
-MCP client (Claude Code / Desktop / API Anthropic)   ← le client GÉNÈRE
-        │ stdio / Streamable HTTP (:8020, phase 3)      (synthèse + citations)
-        ▼
-    insight-mcp (FastMCP)
-        │ index local : BM25 (phase 1), hybrid BM25+dense RRF (phase 2)
-        ▼
-    SQLite data/corpus.db (gitignoré)
-        ▲
-    scripts/ingest.py — httpx + trafilatura, rate-limité, caché
-        ▲
-    URLs publiques (corpus configurable ; démo = publications Wavestone)
+┌──────────────┐  stdio / Streamable HTTP    ┌──────────────────────────────┐
+│ MCP client   │ ──────────────────────────► │  insight-mcp (FastMCP :8020) │
+│ (Claude Code,│                             │  ┌────────────────────────┐  │
+│  Desktop,    │ ◄────────────────────────── │  │ in-memory index        │  │
+│  API)        │  passages + scores + sources│  │ BM25 (+ dense hybrid)  │  │
+└──────────────┘                             │  │ SQLite: data/corpus.db │  │
+   ▲ the client GENERATES                    │  └────────────────────────┘  │
+   │ (answer + citations)                    │  /metrics → Prometheus       │
+                                             └──────────────▲───────────────┘
+                                                            │ offline ingestion
+                                                 scripts/ingest.py ─► public URLs
+                                                 (httpx + trafilatura, polite, cached)
 ```
 
-## Décisions
+## Tool contract
 
-1. **Retrieval-only, pas de LLM côté serveur.** Dans une archi MCP le LLM est déjà
-   côté client : le serveur retourne passages + scores + sources, l'agent rédige la
-   réponse citée. Conséquences : zéro clé API, zéro coût d'inférence, démo
-   reproductible par quiconque clone le repo.
-2. **Serveur autonome** : index embarqué plutôt qu'un backend de recherche externe.
-   Aucune dépendance privée — le déploiement cloud (phase 3) se réduit à un conteneur.
-3. **Corpus jamais commité.** `data/` gitignoré ; le repo ne contient que le code et
-   une liste d'URLs publiques. Ingestion polie : robots.txt, User-Agent identifiable,
-   ~1 req/s, cache disque.
-4. **BM25 d'abord, hybrid ensuite.** rank-bm25 pur Python en phase 1 (deps légères,
-   CI rapide) ; fastembed (ONNX, pas de torch) + fusion RRF en phase 2, derrière un
-   flag `SEARCH_MODE` — les deux modes restent comparables sur un même corpus.
-5. **Transport** : stdio en phase 1 ; Streamable HTTP (port 8020 par défaut,
-   configurable via `MCP_PORT`) en phase 3.
-6. **Index en mémoire** rechargé au démarrage — OK < 10k chunks ; index persistant
-   documenté comme évolution.
+| Tool | Input | Output |
+|------|-------|--------|
+| `search_publications` | `query, top_k=5` | passages + scores + {title, url, date} |
+| `get_publication` | `doc_id` | full text (capped at 20k chars) + metadata |
+| `list_topics` | — | corpus overview (counts, titles, dates, urls) |
 
-## Contrat des tools (phase 1)
+Plus MCP resources `corpus://stats` and `corpus://health`, and the
+`grounded_answer` prompt (answer only from retrieved passages, cite title + url).
 
-| Tool | Entrée | Sortie |
-|------|--------|--------|
-| `search_publications` | `query, top_k=5` | passages + scores + {titre, URL, date} |
-| `get_publication` | `doc_id` | texte complet + métadonnées |
-| `list_topics` | — | aperçu corpus (docs, titres, dates) |
+## Decisions
 
-Phase 2 : resources `corpus://stats`, `corpus://health` ; prompt « réponds uniquement
-à partir des publications retournées, cite titre + URL ».
+### Retrieval-only, not a full RAG service
+
+In an MCP architecture the LLM already lives on the client. The server exposes
+knowledge only — passages, relevance scores, sources — and the client writes the
+cited answer. Consequences: no model API key on the server, zero inference
+cost, and the whole system is reproducible by anyone who clones the repo.
+A full RAG service (server-side generation) would duplicate the client's model
+and force key management onto the server for no retrieval-quality gain.
+
+### BM25 first, hybrid as an opt-in
+
+BM25 (rank-bm25, pure Python) covers exact-term queries with zero heavy
+dependencies and instant startup. Hybrid mode adds fastembed (ONNX runtime, no
+torch) and fuses both rankings with Reciprocal Rank Fusion (`1/(k+rank)`,
+k=60). The embedder is injected as a plain callable, so tests exercise the
+dense path with a deterministic fake and CI never downloads a model.
+Trade-off: hybrid pays model load at startup and one embedding pass per query;
+it wins on paraphrased questions that share no vocabulary with the text.
+
+### In-memory index, rebuilt at startup
+
+The BM25 index (and dense vectors in hybrid mode) are rebuilt from SQLite when
+the first tool runs. Fine below ~10k chunks; a persistent vector index
+(e.g. sqlite-vec, Qdrant) is the documented evolution once corpora grow.
+
+### Bundled sample corpus for zero-setup startup
+
+If `data/corpus.db` does not exist, the server seeds five short original texts
+(committed in `sample_corpus.py`) so a fresh clone answers immediately with no
+network and no ingestion step. Running `scripts/ingest.py` replaces the sample
+with a real corpus. This keeps the demo instant while keeping real content
+acquisition explicit and configurable.
+
+### Streamable HTTP over SSE, stateless
+
+The MCP spec's current remote transport is Streamable HTTP; SSE is the legacy
+option. The server runs `stateless_http=True`: every request is self-contained,
+so the process survives restarts and scales horizontally without session
+affinity. Cost: no server-initiated notifications, which retrieval tools don't
+need.
+
+### Auth: static bearer token
+
+A single `MCP_AUTH_TOKEN` compared in constant time (`hmac.compare_digest`)
+protects `/mcp`; the value is never logged and `changeme`/empty are refused at
+startup. Right-sized for a demo deployment with one consumer. The evolution is
+OAuth 2.1 via the MCP SDK's `token_verifier` hooks — worth discussing, not
+worth building before there are multiple clients.
+
+### Rate limiting: in-memory sliding window
+
+Per-token (hash of the Authorization header), 60 req/min by default
+(`RATE_LIMIT_PER_MINUTE`, 0 disables). In-memory means per-process: a
+multi-replica deployment needs a shared store (Redis). Kept deliberately
+simple; the middleware boundary makes the swap local.
+
+### Corpus & content rights
+
+Indexed third-party content is never committed and never enters a published
+Docker image (an image on a registry is redistribution). The repo ships code,
+seed URLs and original sample texts only. At runtime the corpus arrives via a
+mounted volume or `INGEST_ON_BOOT=1` (the container downloads from the
+configured public URLs itself). Ingestion honors robots.txt, sends an
+identifiable User-Agent, rate-limits to ~1 req/s and caches to disk.
+
+## Known limits
+
+- Index rebuild on every start — no incremental updates.
+- Single SQLite connection shared across the tool thread pool (serialized by a
+  lock); fine at demo scale, a connection pool is the evolution.
+- Rate limiting and metrics are per-process (see above).
+- `get_publication` truncates documents at 20k chars to protect client context.

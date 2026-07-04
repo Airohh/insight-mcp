@@ -1,5 +1,7 @@
 # insight-mcp
 
+[![CI](https://github.com/Airohh/insight-mcp/actions/workflows/ci.yml/badge.svg)](https://github.com/Airohh/insight-mcp/actions/workflows/ci.yml)
+
 Self-contained MCP (Model Context Protocol) server exposing hybrid document search
 as tools for AI agents (Claude Code, Claude Desktop, Anthropic API).
 
@@ -7,12 +9,20 @@ The server does **retrieval only** (BM25, then hybrid): it returns passages, sco
 and sources — the MCP client (the LLM) writes the cited answer. No inference cost,
 no API key on the server side.
 
-## Roadmap
+**Works out of the box**: on first start, if no corpus exists, the server seeds a
+small bundled demo corpus (original texts, committed with the repo) so the tools
+answer immediately — no network, no ingestion step. Index a real corpus whenever
+you want with `scripts/ingest.py` (URL list or sitemap, fully configurable).
 
-- **Phase 1** — ingestion (public URLs → SQLite), BM25 index, 3 MCP tools over stdio ✅
-- **Phase 2** — hybrid search (fastembed + RRF fusion), MCP resources & prompt ✅
-- **Phase 3** — remote: Streamable HTTP (:8020), bearer auth, Docker ✅ (cloud deployment pending)
-- **Phase 4** — MCPOps: Prometheus metrics per tool, rate limiting
+## Features
+
+- **3 tools** (`search_publications`, `get_publication`, `list_topics`), 2 MCP
+  resources, 1 grounded-answer prompt
+- **Two search modes**: BM25 (default, zero deps) or hybrid BM25 + dense
+  embeddings fused with Reciprocal Rank Fusion (`pip install .[hybrid]`)
+- **Two transports**: stdio (local clients) and Streamable HTTP (remote, :8020)
+- **MCPOps built in**: structured JSON logs, Prometheus metrics per tool
+  (`/metrics`), bearer auth, per-token rate limiting, Docker, CI/CD
 
 ## Architecture
 
@@ -64,15 +74,22 @@ dependency-free and instant.
 ```powershell
 python -m venv .venv
 .venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-pytest
+pip install -e .
+python -m insight_mcp.server   # works immediately (bundled demo corpus)
+```
 
-# Build the demo corpus (Wavestone public insights, ~30 pages, ~1 min)
+### Index a real corpus (optional)
+
+```powershell
+# From the seed URL list (scripts/seed_urls_wavestone.txt by default):
 python scripts/ingest.py
 
 # Or any corpus from a sitemap:
 python scripts/ingest.py --sitemap https://example.com/sitemap.xml --filter=/blog/ --max-docs 50
 ```
+
+Ingestion is polite (robots.txt, identifiable User-Agent, ~1 req/s, disk cache)
+and the downloaded content stays in `data/` — never committed.
 
 ### Plug into Claude Code
 
@@ -153,3 +170,22 @@ python scripts/demo_mcp_connector.py --url https://<host>/mcp --token <secret>
 
 Uses the `mcp-client-2025-11-20` beta: the request declares the server under
 `mcp_servers` and enables its tools with an `mcp_toolset` entry.
+
+## MCPOps
+
+Operating the server is part of the design, not an afterthought:
+
+| Concern | Implementation |
+|---------|----------------|
+| Logging | one JSON line per tool call on stderr: tool, duration ms, status, response size (Authorization never logged) |
+| Metrics | Prometheus at `/metrics`: `mcp_tool_calls_total{tool,status}`, `mcp_tool_duration_seconds{tool}` histogram |
+| Auth | constant-time bearer token on `/mcp`; weak defaults refused at startup |
+| Rate limiting | sliding window per token (`RATE_LIMIT_PER_MINUTE`, default 60; in-memory — Redis is the multi-replica evolution) |
+| Health | `corpus://health` MCP resource + open `/metrics` for probes |
+| CI/CD | ruff + pytest on 3.11/3.12 + Docker build on every push; GHCR publish on version tags |
+
+## Corpus & content rights
+
+Indexed third-party content is **never committed and never baked into a Docker
+image** — the repo ships code, seed URLs, and a small bundled demo corpus of
+original texts. See `docs/architecture.md` for the full decision log.

@@ -23,6 +23,7 @@ from mcp.server.fastmcp import FastMCP
 
 from insight_mcp.corpus import Corpus
 from insight_mcp.logging_conf import setup_logging
+from insight_mcp.metrics import TOOL_CALLS, TOOL_DURATION
 from insight_mcp.search import SearchIndex
 from insight_mcp.settings import get_settings
 
@@ -46,11 +47,13 @@ def _get_corpus() -> Corpus:
         if _corpus is None:
             settings = get_settings()
             if not settings.db_path.exists():
-                raise RuntimeError(
-                    f"Corpus database not found at {settings.db_path}."
-                    " Run 'python scripts/ingest.py' to build it first."
-                )
-            _corpus = Corpus(settings.db_path)
+                # Zero-setup path: a fresh clone gets the bundled sample corpus
+                # so the tools work immediately; scripts/ingest.py replaces it.
+                from insight_mcp.bootstrap import seed_sample_corpus
+
+                _corpus = seed_sample_corpus(settings.db_path)
+            else:
+                _corpus = Corpus(settings.db_path)
         return _corpus
 
 
@@ -71,7 +74,7 @@ def _get_index() -> SearchIndex:
 
 
 def _logged(func: Callable[..., Any]) -> Callable[..., Any]:
-    """Log every tool call: name, duration ms, status, response size."""
+    """Log and measure every tool call: JSON log line + Prometheus series."""
 
     @functools.wraps(func)
     def wrapper(*args: Any, **kwargs: Any) -> Any:
@@ -79,21 +82,27 @@ def _logged(func: Callable[..., Any]) -> Callable[..., Any]:
         try:
             result = func(*args, **kwargs)
         except Exception as exc:
+            duration = time.perf_counter() - start
+            TOOL_CALLS.labels(tool=func.__name__, status="error").inc()
+            TOOL_DURATION.labels(tool=func.__name__).observe(duration)
             log.info(
                 "tool_call",
                 extra={
                     "tool": func.__name__,
-                    "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+                    "duration_ms": round(duration * 1000, 1),
                     "status": "error",
                     "error": str(exc),
                 },
             )
             raise
+        duration = time.perf_counter() - start
+        TOOL_CALLS.labels(tool=func.__name__, status="ok").inc()
+        TOOL_DURATION.labels(tool=func.__name__).observe(duration)
         log.info(
             "tool_call",
             extra={
                 "tool": func.__name__,
-                "duration_ms": round((time.perf_counter() - start) * 1000, 1),
+                "duration_ms": round(duration * 1000, 1),
                 "status": "ok",
                 "response_chars": len(json.dumps(result, default=str)),
             },
@@ -207,8 +216,11 @@ def grounded_answer(question: str) -> str:
 def run_http() -> None:
     """Serve Streamable HTTP on 0.0.0.0:MCP_PORT, path /mcp, bearer auth."""
     import uvicorn
+    from starlette.routing import Mount
 
     from insight_mcp.http_auth import BearerAuthMiddleware
+    from insight_mcp.metrics import metrics_app
+    from insight_mcp.rate_limit import RateLimitMiddleware
 
     settings = get_settings()
     if not settings.mcp_auth_token or settings.mcp_auth_token == "changeme":
@@ -222,7 +234,12 @@ def run_http() -> None:
     # Stateless: no per-session state on the server, so it survives restarts
     # and scales horizontally (each request is self-contained).
     mcp.settings.stateless_http = True
-    app = BearerAuthMiddleware(mcp.streamable_http_app(), settings.mcp_auth_token)
+    inner = mcp.streamable_http_app()
+    # /metrics stays outside auth and rate limiting: counts and latencies only
+    inner.routes.append(Mount("/metrics", app=metrics_app()))
+    app: Any = BearerAuthMiddleware(inner, settings.mcp_auth_token)
+    if settings.rate_limit_per_minute > 0:
+        app = RateLimitMiddleware(app, limit=settings.rate_limit_per_minute)
     log.info(
         "server_start",
         extra={"transport": "streamable-http", "port": settings.mcp_port},

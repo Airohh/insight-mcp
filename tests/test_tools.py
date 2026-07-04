@@ -71,17 +71,14 @@ def test_corpus_health_resource_ok(wired_server):
     assert health["chunks"] > 0
 
 
-def test_corpus_health_resource_reports_error(monkeypatch, tmp_path):
-    monkeypatch.setattr(server, "_corpus", None)
-    monkeypatch.setattr(server, "_index", None)
-    monkeypatch.setattr(
-        server, "get_settings", lambda: type(
-            "S", (), {"db_path": tmp_path / "nope.db"}
-        )()
-    )
+def test_corpus_health_resource_reports_error(monkeypatch):
+    def boom() -> None:
+        raise RuntimeError("database is on fire")
+
+    monkeypatch.setattr(server, "_get_corpus", boom)
     health = json.loads(server.corpus_health())
     assert health["status"] == "error"
-    assert "ingest" in health["detail"]
+    assert "on fire" in health["detail"]
 
 
 def test_grounded_answer_prompt_mentions_tool_and_question(wired_server):
@@ -90,13 +87,17 @@ def test_grounded_answer_prompt_mentions_tool_and_question(wired_server):
     assert "What about AI agents?" in text
 
 
-def test_missing_db_message(monkeypatch, tmp_path):
+def test_missing_db_seeds_sample_corpus(monkeypatch, tmp_path):
+    """Fresh clone path: no data/ at all — tools must still work out of the box."""
     monkeypatch.setattr(server, "_corpus", None)
     monkeypatch.setattr(server, "_index", None)
     monkeypatch.setattr(
         server, "get_settings", lambda: type(
-            "S", (), {"db_path": tmp_path / "nope.db"}
+            "S", (), {"db_path": tmp_path / "data" / "corpus.db", "search_mode": "bm25"}
         )()
     )
-    with pytest.raises(RuntimeError, match="ingest"):
-        server.search_publications("anything")
+    results = server.search_publications("hybrid retrieval BM25", top_k=3)
+    assert results
+    assert results[0]["url"].startswith("sample://")
+    overview = server.list_topics()
+    assert overview["documents"] == 5

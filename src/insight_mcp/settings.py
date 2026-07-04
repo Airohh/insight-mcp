@@ -23,8 +23,9 @@ class Settings(BaseSettings):
     data_dir: Path = _REPO_ROOT / "data"
     search_mode: Literal["bm25", "hybrid"] = "bm25"
     embed_model: str = "BAAI/bge-small-en-v1.5"  # hybrid mode only (fastembed)
-    mcp_auth_token: str = ""  # HTTP transport only (phase 3)
-    mcp_port: int = 8020  # HTTP transport only (phase 3)
+    mcp_auth_token: str = ""  # HTTP transport only
+    mcp_port: int = 8020  # HTTP transport only
+    rate_limit_per_minute: int = 60  # HTTP transport; 0 disables
 
     @property
     def db_path(self) -> Path:
