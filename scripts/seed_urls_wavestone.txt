@@ -1,0 +1,33 @@
+# Seed URLs for the demo corpus: Wavestone public insights (English).
+# Content is downloaded at ingestion time and never committed (data/ is gitignored).
+# Regenerate/extend: python scripts/ingest.py --sitemap https://www.wavestone.com/insight-sitemap.xml --filter=/en/insight/
+https://www.wavestone.com/en/insight/2025-ai-cyber-benchmark/
+https://www.wavestone.com/en/insight/2025-customer-experience-startups-radar/
+https://www.wavestone.com/en/insight/2025-french-cybersecurity-startup-radar/
+https://www.wavestone.com/en/insight/agentic-ai-playbook/
+https://www.wavestone.com/en/insight/ai-agents-manage-brilliant-yet-unstable-new-colleagues/
+https://www.wavestone.com/en/insight/ai-sprint-impress-walk-endure/
+https://www.wavestone.com/en/insight/ais-role-in-helping-the-automotive-sector-adapt-to-increasing-regionalization-in-2025/
+https://www.wavestone.com/en/insight/beyond-traditional-change-management/
+https://www.wavestone.com/en/insight/carbon-budgets-take-control-of-your-decarbonization/
+https://www.wavestone.com/en/insight/compliance-risk-resilience/
+https://www.wavestone.com/en/insight/connecting-the-worlds-a-necessary-collective-action-for-a-sustainable-future/
+https://www.wavestone.com/en/insight/continuous-identity-zero-trust/
+https://www.wavestone.com/en/insight/contract-hygiene-properly-managing-data/
+https://www.wavestone.com/en/insight/csr-barometer-2025-esg-data-ai/
+https://www.wavestone.com/en/insight/csrd-benchmark-2025-sustainability-reports/
+https://www.wavestone.com/en/insight/customer-experience/
+https://www.wavestone.com/en/insight/cybersecurity-in-public-transport-3-focus-areas-for-building-resilience/
+https://www.wavestone.com/en/insight/cybersecurity/
+https://www.wavestone.com/en/insight/digital-sovereignty-awakens-why-businesses-lead-charge/
+https://www.wavestone.com/en/insight/digital-wallets-reshaping-iam/
+https://www.wavestone.com/en/insight/esg-risk-eba-guidelines-banks/
+https://www.wavestone.com/en/insight/femtech-barometer-2025-innovation-driving-womens-health-forward/
+https://www.wavestone.com/en/insight/how-sap-business-data-cloud-transforms-data-intelligence/
+https://www.wavestone.com/en/insight/medtechs-next-frontier-prioritizing-patient-experience-for-better-outcomes/
+https://www.wavestone.com/en/insight/optichannel-customer-engagement-pharma/
+https://www.wavestone.com/en/insight/optimizing-it-costs-a-strategic-challenge-for-the-financial-sector/
+https://www.wavestone.com/en/insight/strategic-levers-successfully-digitizing-research-innovation-organizations/
+https://www.wavestone.com/en/insight/sustainability-digital-transformation-ai/
+https://www.wavestone.com/en/insight/sustainability-embracing-paradigm-shift/
+https://www.wavestone.com/en/insight/value-realization-office/
