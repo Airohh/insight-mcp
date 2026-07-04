@@ -11,7 +11,7 @@ no API key on the server side.
 
 - **Phase 1** — ingestion (public URLs → SQLite), BM25 index, 3 MCP tools over stdio ✅
 - **Phase 2** — hybrid search (fastembed + RRF fusion), MCP resources & prompt ✅
-- **Phase 3** — remote: Streamable HTTP (:8020), Docker, cloud deployment
+- **Phase 3** — remote: Streamable HTTP (:8020), bearer auth, Docker ✅ (cloud deployment pending)
 - **Phase 4** — MCPOps: Prometheus metrics per tool, rate limiting
 
 ## Architecture
@@ -117,3 +117,39 @@ npx @modelcontextprotocol/inspector python -m insight_mcp.server
 
 Every tool call is logged as structured JSON on stderr (tool, duration ms,
 status, response size) — stdout stays clean for the stdio transport.
+
+## Remote (Streamable HTTP)
+
+```powershell
+# .env: MCP_AUTH_TOKEN=<strong-secret>   ('changeme' is refused)
+python -m insight_mcp.server --http      # serves http://0.0.0.0:8020/mcp
+```
+
+Requests to `/mcp` without `Authorization: Bearer <token>` get 401. The token
+is compared constant-time and never logged. A static bearer token fits a demo
+deployment; OAuth 2.1 via the MCP SDK's auth hooks is the documented next step.
+
+### Docker
+
+```powershell
+docker compose up --build
+# or bare:
+docker run -p 8020:8020 -e MCP_AUTH_TOKEN=<secret> -v ${PWD}/data:/app/data insight-mcp
+```
+
+The image contains **code only — never the corpus** (indexed third-party
+content is not redistributed). Provide data at runtime: mount `data/` as a
+volume, or set `INGEST_ON_BOOT=1` to build the index from the seed URLs when
+the container starts.
+
+### Consume from the Anthropic API (MCP connector)
+
+Once deployed behind HTTPS, any Claude API call can use the server directly —
+no MCP client needed:
+
+```powershell
+python scripts/demo_mcp_connector.py --url https://<host>/mcp --token <secret>
+```
+
+Uses the `mcp-client-2025-11-20` beta: the request declares the server under
+`mcp_servers` and enables its tools with an `mcp_toolset` entry.

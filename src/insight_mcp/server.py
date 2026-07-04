@@ -3,11 +3,13 @@
 The server does retrieval only: it returns passages, scores and sources, and
 the MCP client (the LLM) writes the cited answer. Run with:
 
-    python -m insight_mcp.server
+    python -m insight_mcp.server          # stdio (Claude Code / Desktop)
+    python -m insight_mcp.server --http   # Streamable HTTP on MCP_PORT (remote)
 """
 
 from __future__ import annotations
 
+import argparse
 import functools
 import json
 import logging
@@ -202,8 +204,44 @@ def grounded_answer(question: str) -> str:
     )
 
 
+def run_http() -> None:
+    """Serve Streamable HTTP on 0.0.0.0:MCP_PORT, path /mcp, bearer auth."""
+    import uvicorn
+
+    from insight_mcp.http_auth import BearerAuthMiddleware
+
+    settings = get_settings()
+    if not settings.mcp_auth_token or settings.mcp_auth_token == "changeme":
+        raise SystemExit(
+            "HTTP mode requires a real MCP_AUTH_TOKEN (set it in .env;"
+            " 'changeme' is refused on purpose)."
+        )
+    mcp.settings.host = "0.0.0.0"
+    mcp.settings.port = settings.mcp_port
+    mcp.settings.streamable_http_path = "/mcp"
+    # Stateless: no per-session state on the server, so it survives restarts
+    # and scales horizontally (each request is self-contained).
+    mcp.settings.stateless_http = True
+    app = BearerAuthMiddleware(mcp.streamable_http_app(), settings.mcp_auth_token)
+    log.info(
+        "server_start",
+        extra={"transport": "streamable-http", "port": settings.mcp_port},
+    )
+    uvicorn.run(app, host="0.0.0.0", port=settings.mcp_port, log_config=None)
+
+
 def main() -> None:
     setup_logging()
+    parser = argparse.ArgumentParser(description="insight-mcp server")
+    parser.add_argument(
+        "--http",
+        action="store_true",
+        help="serve Streamable HTTP on MCP_PORT instead of stdio",
+    )
+    args = parser.parse_args()
+    if args.http:
+        run_http()
+        return
     log.info("server_start", extra={"transport": "stdio"})
     mcp.run()
 

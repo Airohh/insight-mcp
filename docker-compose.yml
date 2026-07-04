@@ -1,0 +1,12 @@
+services:
+  insight-mcp:
+    build: .
+    ports:
+      - "8020:8020"
+    environment:
+      MCP_AUTH_TOKEN: ${MCP_AUTH_TOKEN:?set MCP_AUTH_TOKEN in .env}
+      SEARCH_MODE: ${SEARCH_MODE:-bm25}
+      INGEST_ON_BOOT: ${INGEST_ON_BOOT:-0}
+    volumes:
+      # corpus lives outside the image (see Dockerfile header)
+      - ./data:/app/data
