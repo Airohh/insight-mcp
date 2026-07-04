@@ -30,9 +30,9 @@ MCP client (Claude Code / Desktop / API Anthropic)   ← le client GÉNÈRE
    ~1 req/s, cache disque.
 4. **BM25 d'abord, hybrid ensuite.** rank-bm25 pur Python en phase 1 (deps légères,
    CI rapide) ; fastembed (ONNX, pas de torch) + fusion RRF en phase 2, derrière un
-   flag `SEARCH_MODE` — la comparaison bm25/hybrid est un argument d'entretien.
-5. **Transport** : stdio en phase 1 ; Streamable HTTP port 8020 en phase 3
-   (bloc 8020-8029 réservé dans `Contexte/PORTS.md`).
+   flag `SEARCH_MODE` — les deux modes restent comparables sur un même corpus.
+5. **Transport** : stdio en phase 1 ; Streamable HTTP (port 8020 par défaut,
+   configurable via `MCP_PORT`) en phase 3.
 6. **Index en mémoire** rechargé au démarrage — OK < 10k chunks ; index persistant
    documenté comme évolution.
 

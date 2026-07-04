@@ -7,7 +7,14 @@ The server does **retrieval only** (BM25, then hybrid): it returns passages, sco
 and sources — the MCP client (the LLM) writes the cited answer. No inference cost,
 no API key on the server side.
 
-> Work in progress — phase 1 (ingestion + BM25 index + stdio tools) in development.
+> Work in progress.
+
+## Roadmap
+
+- **Phase 1** — ingestion (public URLs → SQLite), BM25 index, 3 MCP tools over stdio *(in progress)*
+- **Phase 2** — hybrid search (fastembed + RRF fusion), MCP resources & prompt
+- **Phase 3** — remote: Streamable HTTP (:8020), Docker, cloud deployment
+- **Phase 4** — MCPOps: Prometheus metrics per tool, rate limiting
 
 ## Architecture
 
