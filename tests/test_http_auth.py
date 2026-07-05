@@ -58,3 +58,30 @@ def test_paths_outside_prefix_are_open():
 def test_empty_token_refused_at_construction():
     with pytest.raises(ValueError, match="non-empty"):
         BearerAuthMiddleware(ok_app, "")
+
+
+def test_transport_security_default_is_sdk_default():
+    from insight_mcp.server import _transport_security
+
+    assert _transport_security("") is None
+    assert _transport_security("  ,  ") is None
+
+
+def test_transport_security_wildcard_disables_check():
+    from insight_mcp.server import _transport_security
+
+    security = _transport_security("*")
+    assert security.enable_dns_rebinding_protection is False
+
+
+def test_transport_security_expands_hosts_with_port_wildcard():
+    from insight_mcp.server import _transport_security
+
+    security = _transport_security("app.example.com, other.io")
+    assert security.enable_dns_rebinding_protection is True
+    assert security.allowed_hosts == [
+        "app.example.com",
+        "app.example.com:*",
+        "other.io",
+        "other.io:*",
+    ]

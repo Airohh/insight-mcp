@@ -26,6 +26,11 @@ class Settings(BaseSettings):
     mcp_auth_token: str = ""  # HTTP transport only
     mcp_port: int = 8020  # HTTP transport only
     rate_limit_per_minute: int = 60  # HTTP transport; 0 disables
+    # Host headers accepted by the Streamable HTTP transport (DNS-rebinding
+    # protection). Comma-separated, e.g. "myapp.azurecontainerapps.io".
+    # "*" disables the check entirely (rely on bearer auth alone) — fine
+    # behind a TLS ingress, not for a bare localhost deployment.
+    mcp_allowed_hosts: str = ""
 
     @property
     def db_path(self) -> Path:

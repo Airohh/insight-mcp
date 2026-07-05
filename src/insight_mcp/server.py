@@ -213,6 +213,24 @@ def grounded_answer(question: str) -> str:
     )
 
 
+def _transport_security(allowed_hosts: str):
+    """Map MCP_ALLOWED_HOSTS to the SDK's DNS-rebinding protection settings.
+
+    Empty string → None (keep the SDK default: localhost only). "*" anywhere
+    → disable the Host check (bearer auth still guards every request).
+    Otherwise each host is allowed with and without an explicit port.
+    """
+    from mcp.server.transport_security import TransportSecuritySettings
+
+    hosts = [h.strip() for h in allowed_hosts.split(",") if h.strip()]
+    if not hosts:
+        return None
+    if "*" in hosts:
+        return TransportSecuritySettings(enable_dns_rebinding_protection=False)
+    expanded = [h for base in hosts for h in (base, f"{base}:*")]
+    return TransportSecuritySettings(allowed_hosts=expanded)
+
+
 def run_http() -> None:
     """Serve Streamable HTTP on 0.0.0.0:MCP_PORT, path /mcp, bearer auth."""
     import uvicorn
@@ -231,6 +249,9 @@ def run_http() -> None:
     mcp.settings.host = "0.0.0.0"
     mcp.settings.port = settings.mcp_port
     mcp.settings.streamable_http_path = "/mcp"
+    security = _transport_security(settings.mcp_allowed_hosts)
+    if security is not None:
+        mcp.settings.transport_security = security
     # Stateless: no per-session state on the server, so it survives restarts
     # and scales horizontally (each request is self-contained).
     mcp.settings.stateless_http = True

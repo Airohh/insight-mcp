@@ -30,7 +30,8 @@ az containerapp create `
   --min-replicas 0 --max-replicas 1 `
   --cpu 0.5 --memory 1.0Gi `
   --secrets mcp-token=$TOKEN `
-  --env-vars MCP_AUTH_TOKEN=secretref:mcp-token INGEST_ON_BOOT=1
+  --env-vars MCP_AUTH_TOKEN=secretref:mcp-token INGEST_ON_BOOT=1 `
+             MCP_ALLOWED_HOSTS='*'
 
 az containerapp show --name $APP --resource-group $RG `
   --query properties.configuration.ingress.fqdn -o tsv
@@ -38,6 +39,13 @@ az containerapp show --name $APP --resource-group $RG `
 ```
 
 Notes:
+- `MCP_ALLOWED_HOSTS`: the MCP SDK's Streamable HTTP transport validates the
+  `Host` header (DNS-rebinding protection) and only allows localhost by
+  default. `*` disables the check — acceptable here because bearer auth
+  guards every request and the app sits behind Azure's TLS ingress. To pin
+  it instead, set the app's FQDN once known (chicken-and-egg on first
+  deploy: the FQDN is assigned at creation, hence `*` then optionally
+  `az containerapp update --set-env-vars MCP_ALLOWED_HOSTS=<fqdn>`).
 - **GHCR image is public** (published by the release workflow on `v*` tags), so
   no registry credentials are needed.
 - `INGEST_ON_BOOT=1`: first boot downloads the seed URLs (~1 min) before the
